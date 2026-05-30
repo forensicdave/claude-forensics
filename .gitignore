@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Editor / OS
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
+
+# Tool output: timestamped working dirs created by claude-forensics.sh
+claude-forensics-*/
+
+# Default output filenames from the Python tools, only at the repo root
+/claude-history.jsonl
+/claude-report.md
+/sessions.jsonl
+/prompts.jsonl
+/processes.jsonl
+/shell-snapshots.jsonl
+
+# A user-supplied prices.json contains real billing rates and should not be
+# checked in. prices.example.json (the zero-valued template) IS tracked.
+prices.json
+
+# Frozen snapshots, in case anyone runs the tool from inside the repo
+claude-snapshot/
