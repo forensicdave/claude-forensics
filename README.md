@@ -1,6 +1,6 @@
 # claude-forensics
 
-Extract a complete, evidence-grade record of how Claude (Chat or Code or Cowork) has been used on a
+First release of tooling to extract a complete, evidence-grade record of how Claude (Chat or Code or Cowork) has been used on a
 machine, from any `.claude` directory. Point it at a captured `.claude/`
 tree (and the Claude Desktop data dir alongside it) and get back a
 searchable, sortable, fully reconstructed history: every session, every
