@@ -1,6 +1,6 @@
 # claude-forensics
 
-First release of tooling to extract a complete, evidence-grade record of how Claude (Chat or Code or Cowork) has been used on a
+Extract a complete, evidence-grade record of how Claude (Chat or Code or Cowork) has been used on a
 machine, from any `.claude` directory. Point it at a captured `.claude/`
 tree (and the Claude Desktop data dir alongside it) and get back a
 searchable, sortable, fully reconstructed history: every session, every
@@ -44,6 +44,8 @@ $EDITOR prices.json           # fill in real per-million-token rates
 Each run produces a timestamped working directory containing a read-only
 evidence snapshot, four JSONL streams, two Markdown reports, jq-derived
 fact files, and a single tarball ready to archive.
+
+Prefer a point-and-click flow? There is a Tkinter GUI — see [GUI](#gui) below.
 
 ## What you get
 
@@ -115,6 +117,37 @@ want to script around them.
 | [`claude_report.py`](claude_report.py)       | Reporter: JSONL → Markdown report (per-project or chronological) | [docs/claude_report.md](docs/claude_report.md) |
 
 Cost estimation is configured through [`prices.example.json`](prices.example.json) — copy it to `prices.json` and fill in real rates. Without a pricing file the reports still include exact token counts; only dollar figures are skipped.
+
+## GUI
+
+For users who'd rather not touch a terminal, [`claude_forensics_gui.py`](claude_forensics_gui.py) is a Tkinter front-end for the bash orchestrator. It has three tabs:
+
+- **Analyze** — pick a `.claude` directory, an output folder, optional Cowork source / pricing JSON / GPG key, and click *Run analysis*. The live log streams in the window; when the run finishes, *Open output folder* / *Open summary.html* / *Open report-by-project.html* buttons appear.
+- **Verify bundle** — pick a `claude-forensics-*.tgz`, click *Verify bundle*, get a big ✅ VERIFIED OK or ❌ VERIFICATION FAILED indicator backed by the orchestrator's `--verify` mode.
+- **Pricing** — form-based editor for `prices.json` (effective date, currency, per-model token rates, server-tool rates). Load an existing file, edit, save — no JSON typing required.
+
+Launch it once the GUI script is on PATH (via [`install.sh`](install.sh)):
+
+```sh
+claude-forensics-gui
+```
+
+Or directly from a checkout:
+
+```sh
+python3.13 claude_forensics_gui.py     # any Python 3.10+ with Tk 8.6
+```
+
+### Tk caveat on Apple's bundled Python
+
+The GUI uses Tkinter. Apple's `/usr/bin/python3` ships **Tk 8.5**, which is deprecated and renders ttk widgets poorly on recent macOS — the window opens but appears blank. The GUI auto-falls-back to the `clam` theme on Tk 8.5 so it remains *usable* there, but for a native look use a Python with Tk 8.6:
+
+- `brew install python-tk@3.13` (or `@3.14`) — adds Tk 8.6 to your existing Homebrew Python, then run `python3.13 claude_forensics_gui.py`.
+- python.org's Python 3.12+ installer — ships Tk 8.6.x out of the box.
+
+### Double-clickable .app for end users
+
+Non-technical end users should not be running `python3 …` at all. Use [`setup.py`](setup.py) + py2app to produce `dist/Claude Forensics.app`, which bundles the GUI, the bash orchestrator, both Python tools, and the pricing template into one drag-and-drop install. See [docs/build-app.md](docs/build-app.md) for the build steps, unsigned-vs-signed tradeoffs, and Apple notarization flow.
 
 ## Installation
 
