@@ -65,6 +65,12 @@ if [ ! -w "$PREFIX" ]; then
     exit 2
 fi
 
+# Files uploaded via GitHub's web UI land at mode 0644 — they don't
+# carry the executable bit and won't run via their shebang. Restore +x
+# on the two files that need it before doing anything else, so both
+# install modes work after a web-UI re-upload of the repo.
+chmod +x "$SRC/claude-forensics.sh" "$SRC/claude_forensics_gui.py" 2>/dev/null || true
+
 case "$MODE" in
 symlink)
     TARGET="$PREFIX/claude-forensics"
