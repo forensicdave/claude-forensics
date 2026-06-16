@@ -47,8 +47,8 @@ PLIST = {
     "CFBundleName":              "Claude Forensics",
     "CFBundleDisplayName":       "Claude Forensics",
     "CFBundleIdentifier":        "org.claude-forensics.gui",
-    "CFBundleVersion":           "0.1.0",
-    "CFBundleShortVersionString": "0.1.0",
+    "CFBundleVersion":           "0.1.1",
+    "CFBundleShortVersionString": "0.1.1",
     "NSHighResolutionCapable":   True,
     # We do not register any document types or URL schemes — the GUI
     # picks files via NSOpenPanel from inside the running app.
@@ -62,6 +62,16 @@ OPTIONS = {
     "optimize":        2,        # strip docstrings/asserts
     "strip":           True,
     # No icon yet — drop an .icns into the repo and add "iconfile" here
+    # to give the .app a custom icon in the dock and Finder.
+}
+
+setup(
+    name="Claude Forensics",
+    app=APP,
+    data_files=DATA_FILES,
+    options={"py2app": OPTIONS},
+    setup_requires=["py2app"],
+)
     # to give the .app a custom icon in the dock and Finder.
 }
 
