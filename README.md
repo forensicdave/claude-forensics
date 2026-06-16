@@ -45,7 +45,7 @@ Each run produces a timestamped working directory containing a read-only
 evidence snapshot, four JSONL streams, two Markdown reports, jq-derived
 fact files, and a single tarball ready to archive.
 
-Prefer a point-and-click flow? There is a Tkinter GUI — see [GUI](#gui) below. A pre-built macOS `.app` is available on the [releases page](https://github.com/forensicdave/claude-forensics/releases/tag/v0.1.0).
+Prefer a point-and-click flow? There is a Tkinter GUI — see [GUI](#gui) below. A pre-built macOS `.app` is available on the [releases page](https://github.com/forensicdave/claude-forensics/releases/tag/v0.1.1).
 
 ## What you get
 
@@ -149,184 +149,11 @@ The GUI uses Tkinter. Apple's `/usr/bin/python3` ships **Tk 8.5**, which is depr
 
 Non-technical end users should not be running `python3 …` at all. A pre-built `.app` ships with each release:
 
-**Download:** [Claude Forensics 0.1.0 (.app.zip)](https://github.com/forensicdave/claude-forensics/releases/tag/v0.1.0)
+**Download:** [Claude Forensics 0.1.1 (.app.zip)](https://github.com/forensicdave/claude-forensics/releases/tag/v0.1.1)
 
-Unzip, drag into `/Applications`, then right-click the `.app` → *Open* on first launch (the bundle is unsigned, so Gatekeeper warns once; subsequent launches work normally). Requires macOS 11+ and the Xcode Command Line Tools (`xcode-select --install`, which provides `/usr/bin/python3` for the bundled orchestrator to shell out to).
+Unzip, drag into `/Applications`, then double-click to launch. The bundle is signed with a Developer ID and notarized by Apple, so Gatekeeper opens it without warnings. Requires macOS 11+ and the Xcode Command Line Tools (`xcode-select --install`, which provides `/usr/bin/python3` for the bundled orchestrator to shell out to).
 
 Building your own from source uses [`setup.py`](setup.py) + py2app to produce `dist/Claude Forensics.app`, which bundles the GUI, the bash orchestrator, both Python tools, and the pricing template into one drag-and-drop install. See [docs/build-app.md](docs/build-app.md) for the build steps, unsigned-vs-signed tradeoffs, and Apple notarization flow.
-
-## Installation
-
-No build step, no Python dependencies — everything is stdlib.
-
-```sh
-git clone https://github.com/<you>/claude-forensics.git
-cd claude-forensics
-```
-
-That's enough to run the tool from the checkout directory itself. If you'd like a `claude-forensics` command on `PATH`, `install.sh` offers two modes:
-
-### Symlink mode (default — recommended for developers)
-
-```sh
-./install.sh
-```
-
-Creates a single symlink `$PREFIX/claude-forensics → checkout/claude-forensics.sh`. The orchestrator follows the symlink at runtime to find its Python tools (`claude_forensics.py`, `claude_report.py`) in the checkout directory.
-
-- **Pros**: zero duplication, `git pull` immediately updates everywhere, single-symlink uninstall.
-- **Constraint**: **the checkout directory must remain in place**. If you `mv` or `rm -rf` it, the installed command breaks (the symlink dangles).
-
-### Copy mode (recommended for end users)
-
-```sh
-./install.sh --copy
-```
-
-Copies the orchestrator **and** both Python tools (and `prices.example.json`) into a separate destination directory, then symlinks just the orchestrator onto `PATH`. After install, the checkout is no longer needed and can be deleted.
-
-- **Pros**: self-contained — the install survives deleting or moving the checkout.
-- **Tradeoff**: updates require re-running `./install.sh --copy` after a `git pull`.
-
-### Overriding paths
-
-Both modes honour environment variables:
-
-```sh
-PREFIX=$HOME/.local/bin ./install.sh                     # symlink elsewhere
-PREFIX=$HOME/.local/bin ./install.sh --copy              # full copy elsewhere
-TOOLS_DEST=/opt/claude-forensics ./install.sh --copy     # custom copy target
-```
-
-`PREFIX` defaults to `/usr/local/bin`. In `--copy` mode, `TOOLS_DEST` defaults to `$(dirname $PREFIX)/share/claude-forensics`.
-
-### Uninstall
-
-```sh
-# symlink mode
-rm /usr/local/bin/claude-forensics
-
-# copy mode
-rm -rf /usr/local/share/claude-forensics /usr/local/bin/claude-forensics
-```
-
-## Requirements
-
-- **Python 3.10+** (no third-party packages).
-- **bash 3.2+** (the version shipped with macOS works).
-- **jq** *(optional)* — unlocks the three derived `.txt` / `.jsonl` files in phase 4. Without it those steps are skipped with a `[!]` warning instead of aborting.
-
-## Retention
-
-Claude Code rotates per-session transcripts on a periodic schedule (empirically about a 30-day window), leaving the matching prompts in `history.jsonl` but deleting the per-session `projects/<encoded-cwd>/*.jsonl` files. The tool exploits this asymmetry rather than fighting it:
-
-- `prompts.jsonl` joins each `history.jsonl` entry to the on-disk transcript and surfaces those that no longer have one as **orphans**.
-- `orphan-prompts.jsonl` (emitted by the orchestrator when `jq` is available) is the recovery channel for prompts whose transcripts have been rotated out — typically the only record left for anything older than the retention window.
-- The executive summary's **Retention** section quotes `.claude/.last-cleanup` (the timestamp of the last rotation), the orphan/survivor counts, the date ranges of each group, and the implied retention window.
-
-This means a stale or missing `.last-cleanup` plus a large surviving-transcript range is itself a signal worth noting (the machine has more historical data than the typical baseline).
-
-## Forensic safety
-
-- The orchestrator preserves evidence first: `cp -Rp` keeps mtimes and permissions, then `chmod -R a-w` makes the snapshot immutable. Every subsequent step reads from the snapshot, never the source.
-- Every run produces a `MANIFEST.sha256` covering both the snapshot and all derived artifacts. Verify integrity with `sha256sum -c MANIFEST.sha256` after extracting the bundle. Set `GPG_KEY=...` to also produce a detached signature (`MANIFEST.sha256.asc`) so the manifest itself is attestable to a known investigator.
-- The evidence tarball intentionally excludes the snapshot directory — keep the snapshot as the canonical read-only root and share the tarball as derived analysis.
-- Malformed transcript lines are logged to `extract.log` and skipped, never silently dropped: they're evidence of mid-write crashes or manual editing.
-- Models present in the data but absent from your pricing table are flagged by name in the report's *Pricing notes*, never silently zeroed.
-
-## License
-
-MIT — see [LICENSE](LICENSE).
-├── paste-cache.jsonl             one record per pasted blob (joins to prompts)
-├── file-history.jsonl            one record per (session, file) with all versions
-├── cowork-sessions.jsonl         one record per Cowork session (title, owner, joined)
-├── cowork-agent-sessions.jsonl   one record per Cowork agent session (full transcript)
-├── cowork-agent-report-by-account.{md,html}  parallel "Cowork agent usage report" set
-├── cowork-agent-report-chronological.md
-├── cowork-agent-summary.{md,html}
-├── claude-code-sessions/         one .md + one .html per CLI session (sortable, shareable)
-├── claude-cowork-sessions/       one .md + one .html per Cowork agent session
-├── summary.md / summary.html     one-page executive summary in both formats
-├── report-by-project.md          per-project narrative report
-├── report-by-project.html        same content, self-contained HTML (search, collapsible)
-├── report-chronological.md       timeline narrative report
-├── bash-commands.txt             every Bash command Claude ran           (jq)
-├── files-touched.txt             every file Claude Read/Write/Edited     (jq)
-├── orphan-prompts.jsonl          prompts whose transcripts no longer exist (jq)
-├── extract.log                   extractor stderr (parse warnings)
-├── MANIFEST.sha256               SHA-256 of every file; verify with sha256sum -c
-├── MANIFEST.sha256.asc           detached GPG signature (if GPG_KEY was set)
-└── claude-forensics-*.tgz        evidence bundle (everything but the snapshot)
-```
-
-The closing summary also prints the bundle's own SHA-256 so you can record it externally as a chain-of-custody anchor.
-
-## Supported sources: macOS and Windows
-
-The tool itself runs on macOS or Linux, but it analyses `.claude` and Claude Desktop trees captured from **either macOS or Windows hosts**. Claude Code and Claude Cowork keep important state in two separate directories on each platform — you need **both** trees to get full coverage:
-
-| OS      | Claude Code state          | Claude Desktop / Cowork data                |
-|---------|----------------------------|---------------------------------------------|
-| macOS   | `~/.claude`                | `~/Library/Application Support/Claude/`     |
-| Windows | `\Users\<name>\.claude`    | `\Users\<name>\AppData\Roaming\Claude\`     |
-
-For a Windows host, copy both trees off and run:
-
-```sh
-./claude-forensics.sh \
-    -w /path/to/copy/of/AppData/Roaming/Claude \
-    /path/to/copy/of/.claude \
-    output-dir
-```
-
-`-W` (auto-detect Cowork dir) only knows the macOS default path — on Windows analysis always use `-w PATH` to point at the copied Claude Desktop tree.
-
-Windows Claude Code (as of mid-2026) does not appear to write `history.jsonl`, `shell-snapshots/`, `paste-cache/`, or `file-history/`. The extractor logs a `WARNING no X under …` for each absent subtree and continues; the corresponding JSONL streams and report sections are simply skipped. CLI session transcripts, Cowork sidecar metadata, and full Cowork agent transcripts (incl. their `audit.jsonl`) all extract correctly.
-
-## Tools
-
-The repository is three small, composable tools. The orchestrator runs all
-three end-to-end; the individual tools are useful on their own when you
-want to script around them.
-
-| Tool                                         | Purpose                                            | Docs                                       |
-|----------------------------------------------|----------------------------------------------------|--------------------------------------------|
-| [`claude-forensics.sh`](claude-forensics.sh) | End-to-end orchestrator: snapshot → extract → report → bundle | [docs/claude-forensics.md](docs/claude-forensics.md) |
-| [`claude_forensics.py`](claude_forensics.py) | Extractor: `.claude` directory → four JSONL streams | [docs/claude_forensics.md](docs/claude_forensics.md) |
-| [`claude_report.py`](claude_report.py)       | Reporter: JSONL → Markdown report (per-project or chronological) | [docs/claude_report.md](docs/claude_report.md) |
-
-Cost estimation is configured through [`prices.example.json`](prices.example.json) — copy it to `prices.json` and fill in real rates. Without a pricing file the reports still include exact token counts; only dollar figures are skipped.
-
-## GUI
-
-For users who'd rather not touch a terminal, [`claude_forensics_gui.py`](claude_forensics_gui.py) is a Tkinter front-end for the bash orchestrator. It has three tabs:
-
-- **Analyze** — pick a `.claude` directory, an output folder, optional Cowork source / pricing JSON / GPG key, and click *Run analysis*. The live log streams in the window; when the run finishes, *Open output folder* / *Open summary.html* / *Open report-by-project.html* buttons appear.
-- **Verify bundle** — pick a `claude-forensics-*.tgz`, click *Verify bundle*, get a big ✅ VERIFIED OK or ❌ VERIFICATION FAILED indicator backed by the orchestrator's `--verify` mode.
-- **Pricing** — form-based editor for `prices.json` (effective date, currency, per-model token rates, server-tool rates). Load an existing file, edit, save — no JSON typing required.
-
-Launch it once the GUI script is on PATH (via [`install.sh`](install.sh)):
-
-```sh
-claude-forensics-gui
-```
-
-Or directly from a checkout:
-
-```sh
-python3.13 claude_forensics_gui.py     # any Python 3.10+ with Tk 8.6
-```
-
-### Tk caveat on Apple's bundled Python
-
-The GUI uses Tkinter. Apple's `/usr/bin/python3` ships **Tk 8.5**, which is deprecated and renders ttk widgets poorly on recent macOS — the window opens but appears blank. The GUI auto-falls-back to the `clam` theme on Tk 8.5 so it remains *usable* there, but for a native look use a Python with Tk 8.6:
-
-- `brew install python-tk@3.13` (or `@3.14`) — adds Tk 8.6 to your existing Homebrew Python, then run `python3.13 claude_forensics_gui.py`.
-- python.org's Python 3.12+ installer — ships Tk 8.6.x out of the box.
-
-### Double-clickable .app for end users
-
-Non-technical end users should not be running `python3 …` at all. Use [`setup.py`](setup.py) + py2app to produce `dist/Claude Forensics.app`, which bundles the GUI, the bash orchestrator, both Python tools, and the pricing template into one drag-and-drop install. See [docs/build-app.md](docs/build-app.md) for the build steps, unsigned-vs-signed tradeoffs, and Apple notarization flow.
 
 ## Installation
 
