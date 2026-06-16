@@ -93,27 +93,130 @@ launch. To open it anyway:
 After that one-time bypass, double-clicking works normally.
 
 To eliminate the warning for end users you need an Apple Developer ID
-and a signing + notarization pass:
+and a signing + notarization pass.
 
-```sh
-codesign --deep --force --options runtime \
-         --sign "Developer ID Application: Your Name (TEAMID)" \
-         "dist/Claude Forensics.app"
+### Why `codesign --deep` is NOT enough for py2app bundles
 
-# Notarize:
-ditto -c -k --keepParent "dist/Claude Forensics.app" "Claude Forensics.zip"
-xcrun notarytool submit "Claude Forensics.zip" \
-      --keychain-profile "AC_PASSWORD" --wait
-xcrun stapler staple "dist/Claude Forensics.app"
+`codesign --deep` walks framework and bundle boundaries but ignores
+loose Mach-O files in arbitrary `Contents/Resources/` subdirectories.
+A py2app bundle contains ~80+ Python C extensions
+(`Contents/Resources/lib/python3.X/lib-dynload/*.so`) plus
+`Contents/Resources/zlib.cpython-*.so`, none of which `--deep` reaches.
+Notarization checks every Mach-O in the bundle and will reject the
+submission with errors like:
+
+```
+The binary is not signed with a valid Developer ID certificate.
+  path: …/Contents/Resources/lib/python3.X/lib-dynload/_ssl.so
+The signature does not include a secure timestamp.
+  path: …/Contents/Resources/lib/python3.X/lib-dynload/_ssl.so
 ```
 
-`AC_PASSWORD` is an app-specific password stored in your keychain via
-`xcrun notarytool store-credentials`. This is the standard Apple
-notarization flow; full details at
+The fix is to sign **inside-out**: every `.so` and `.dylib`, then the
+embedded `Python.framework`, then the outer `.app`. Apple's guidance
+since Big Sur has been to sign explicitly rather than rely on `--deep`.
+
+### Full sign + notarize + staple sequence
+
+```sh
+IDENT="Developer ID Application: Your Name (TEAMID)"
+PROFILE="my-notary-profile"   # set up with `xcrun notarytool store-credentials`
+
+# 0. Sanity check: no dangling symlinks. py2app sometimes drops a
+#    symlink at Contents/Resources/lib/python3.X/site.pyo pointing at
+#    a non-existent ../../site.pyo. Gatekeeper rejects bundles with
+#    broken symlinks ("invalid destination for symbolic link in
+#    bundle"), so prune them BEFORE signing.
+find "dist/Claude Forensics.app" -type l ! -exec test -e {} \; -delete
+
+# 1. Sign every .so and .dylib inside the bundle (covers the loose
+#    Python C extensions that --deep does not reach).
+find "dist/Claude Forensics.app" -type f \( -name "*.so" -o -name "*.dylib" \) \
+  -exec codesign --force --options runtime --timestamp --sign "$IDENT" {} +
+
+# 2. Sign the embedded Python.framework's main binary, then the
+#    framework bundle itself.
+codesign --force --options runtime --timestamp --sign "$IDENT" \
+  "dist/Claude Forensics.app/Contents/Frameworks/Python.framework/Versions/3.14/Python"
+codesign --force --options runtime --timestamp --sign "$IDENT" \
+  "dist/Claude Forensics.app/Contents/Frameworks/Python.framework"
+
+# 3. Sign the secondary python Mach-O that py2app drops in MacOS/.
+codesign --force --options runtime --timestamp --sign "$IDENT" \
+  "dist/Claude Forensics.app/Contents/MacOS/python"
+
+# 4. Sign the outer .app LAST so its seal covers everything above.
+codesign --force --options runtime --timestamp --sign "$IDENT" \
+  "dist/Claude Forensics.app"
+
+# 5. Submit to Apple's notary service (waits ~2-10 min).
+ditto -c -k --keepParent "dist/Claude Forensics.app" "Claude-Forensics.app.zip"
+xcrun notarytool submit "Claude-Forensics.app.zip" \
+      --keychain-profile "$PROFILE" --wait
+
+# 6. Staple the notarization ticket so the .app works offline.
+xcrun stapler staple "dist/Claude Forensics.app"
+
+# 7. Re-zip the now-stapled .app for distribution.
+rm "Claude-Forensics.app.zip"
+ditto -c -k --keepParent "dist/Claude Forensics.app" "Claude-Forensics.app.zip"
+
+# 8. Verify Gatekeeper accepts it.
+spctl -a -t exec -vv "dist/Claude Forensics.app"
+# Expected: "source=Notarized Developer ID"
+```
+
+Adjust the Python framework path in step 2 to match the Python you
+built with (`Versions/3.13/Python`, `Versions/3.14/Python`, etc.).
+
+`$PROFILE` is an app-specific password stored in your keychain via
+`xcrun notarytool store-credentials <profile-name> --apple-id …
+--team-id …`. Full Apple docs:
 <https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution>.
 
-Signing/notarization is outside this repo's default workflow. Maintain
-it in whatever CI handles the public release if you go that route.
+### If notarization is rejected
+
+The `submit` call ends with `status: Invalid`. Get the detailed log
+with:
+
+```sh
+xcrun notarytool log <submission-id> --keychain-profile "$PROFILE"
+```
+
+The JSON `issues[]` array names every binary that failed and why. The
+most common cause for this project is missing the inside-out sign
+pass above — the log will list a long tail of `.so` files in
+`Contents/Resources/lib/python3.X/lib-dynload/`. Re-run steps 1-4 and
+resubmit.
+
+### Local `codesign --verify` quirk
+
+`codesign --verify --deep --strict` may print
+
+```
+--prepared:…/Contents/MacOS/python
+--validated:…/Contents/MacOS/python
+…/Claude Forensics.app: No such file or directory
+```
+
+even when the bundle is correctly signed. py2app puts two Mach-O
+files in `Contents/MacOS/` (the launcher and an embedded `python`),
+which confuses codesign's bundle walker. The notarization service
+does its own checks and is the authoritative answer — if notary
+returns `Accepted`, the signature is fine regardless of what local
+`--verify` says. Confirm with:
+
+```sh
+codesign --verify -R="anchor apple generic and certificate leaf[subject.OU] = TEAMID" \
+         "dist/Claude Forensics.app"
+```
+
+That variant exits 0 when the signature satisfies its designated
+requirement.
+
+Signing/notarization is outside this repo's default `python3 setup.py
+py2app` workflow. Maintain it in whatever CI handles the public
+release if you go that route.
 
 ## Universal binaries
 
