@@ -101,6 +101,20 @@ class CommandRunner:
             if self.proc and self.proc.poll() is None:
                 raise RuntimeError("a command is already running")
 
+            # When the GUI itself is running inside a py2app .app bundle,
+            # os.environ inherits PYTHONHOME / PYTHONPATH / PYTHONEXECUTABLE
+            # that point at the bundle's embedded interpreter. The bash
+            # orchestrator shells out to the SYSTEM `python3` (/usr/bin/...)
+            # to run the .py tools; that interpreter, if it sees those env
+            # vars, tries to boot against the bundle's stdlib and dies with
+            # "Could not find platform independent libraries" before
+            # claude_forensics.py even gets to import. Strip them here so
+            # the system python3 boots cleanly. Harmless outside a bundle.
+            if env is not None:
+                env = {k: v for k, v in env.items()
+                       if not k.startswith("PYTHON")
+                       and not k.startswith("__PYVENV")}
+
             def worker() -> None:
                 try:
                     self.proc = subprocess.Popen(
